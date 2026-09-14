@@ -184,8 +184,12 @@ with tabs[1]:
 
     st.markdown("---")
     
-    w_res = st_supabase.client.from_("weight_logs").select("*").eq("user_name", current_user).execute()
-    prof_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
+    try:
+        w_res = st_supabase.client.from_("weight_logs").select("*").eq("user_name", current_user).execute()
+        prof_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
+    except Exception as e:
+        st.error(f"Database error: {e}. Please ensure the 'weight_logs' table exists in Supabase.")
+        st.stop()
     
     if w_res.data:
         w_df = pd.DataFrame(w_res.data).sort_values("log_date")
