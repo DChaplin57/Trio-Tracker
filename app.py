@@ -389,26 +389,35 @@ with tabs[4]:
             label="📈 Export Weight Logs (CSV)",
             data=csv_weight,
             file_name=f"{current_user.lower().replace(' ', '_')}_weight_logs.csv",
+            st.markdown("---")
+    st.subheader("📥 Data Backup & Export")
+    col_exp1, col_exp2 = st.columns(2)
+
+    export_logs = st_supabase.query("daily_logs", ttl=0).eq("user_name", current_user).execute()
+    if export_logs.data:
+        df_logs_export = pd.DataFrame(export_logs.data)
+        csv_logs = df_logs_export.to_csv(index=False).encode('utf-8')
+        col_exp1.download_button(
+            label="📄 Export Meal Logs (CSV)",
+            data=csv_logs,
+            file_name=f"{current_user.lower().replace(' ', '_')}_meal_logs.csv",
             mime="text/csv"
         )
     else:
-        col_exp2.info("No weight logs to export.")        margin-bottom: 15px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        border-radius: 8px;
-        background-color: #2563EB;
-        color: white;
-        font-weight: 600;
-        border: none;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        background-color: #1D4ED8;
-        color: white;
-    }
+        col_exp1.info("No meal logs to export.")
+
+    export_weight = st_supabase.query("weight_logs", ttl=0).eq("user_name", current_user).execute()
+    if export_weight.data:
+        df_weight_export = pd.DataFrame(export_weight.data)
+        csv_weight = df_weight_export.to_csv(index=False).encode('utf-8')
+        col_exp2.download_button(
+            label="📈 Export Weight Logs (CSV)",
+            data=csv_weight,
+            file_name=f"{current_user.lower().replace(' ', '_')}_weight_logs.csv",
+            mime="text/csv"
+        )
+    else:
+        col_exp2.info("No weight logs to export.")
     </style>
 """, unsafe_allow_html=True)
 
