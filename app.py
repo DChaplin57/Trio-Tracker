@@ -946,15 +946,15 @@ with tabs[2]:
                 c100 = available_foods[available_foods['food_name'] == ing]['calories_per_100g'].values[0]
                 st.session_state.recipe_items.append({'item': ing, 'grams': qty, 'cals': (c100 / 100.0) * qty})
 
-        if st.session_state.recipe_items:
+if st.session_state.recipe_items:
             recipe_df = pd.DataFrame(st.session_state.recipe_items)
             st.table(recipe_df)
             tot_cals = recipe_df['cals'].sum()
             per_portion = tot_cals / servings
             st.warning(f"**Total Energy:** {int(tot_cals)} kcal | **Energy per Serving:** {int(per_portion)} kcal")
-            
+
             if st.button("Save Recipe to Food Library"):
-                supabase.table("food_library").upsert({
+                st_supabase.table("food_library").upsert({
                     "food_name": recipe_name,
                     "calories_per_100g": per_portion,
                     "protein_g": 0, "carbs_g": 0, "fat_g": 0
@@ -966,7 +966,7 @@ with tabs[2]:
 # --- TAB 4: PROFILE SETTINGS ---
 with tabs[3]:
     st.subheader(f"⚙️ Core Parameters: {current_user}")
-    
+
     with st.form("profile_form"):
         u_gender = st.selectbox("Biological Sex", ["Female", "Male"])
         u_age = st.number_input("Age", min_value=10, max_value=120, value=40)
@@ -975,7 +975,7 @@ with tabs[3]:
         u_target_wt = st.number_input("Target Weight (kg)", min_value=30.0, max_value=300.0, value=75.0)
         u_start_dt = st.date_input("Start Date", date.today())
         u_target_dt = st.date_input("Target End Date", date.today())
-        
+
         act_opts = {
             "Sedentary (Little/no exercise)": 1.2,
             "Lightly Active (1-3 days/week)": 1.375,
@@ -983,9 +983,9 @@ with tabs[3]:
             "Very Active (6-7 days/week)": 1.725
         }
         u_act = st.selectbox("Activity Level", list(act_opts.keys()))
-        
-        if st.form_submit_button("Save Profile Parameters") and supabase:
-            supabase.table("profiles").upsert({
+
+        if st.form_submit_button("Save Profile Parameters") and st_supabase:
+            st_supabase.table("profiles").upsert({
                 "user_name": current_user,
                 "gender": u_gender,
                 "age": u_age,
