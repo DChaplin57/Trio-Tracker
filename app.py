@@ -194,99 +194,76 @@ with tabs[0]:
                 st.markdown(f"**{category}** — *{int(cat_df['calories'].sum())} kcal*")
                 st.dataframe(cat_df[['food_name', 'calories']], use_container_width=True)
 # --- TAB 2: PROGRESS & GRAPHS ---
-with tabs[1]:
-    st.subheader(f"📈 Progress Tracking: {current_user}")
+import requests
+
+# Inside Tab 3: Shared Household Food Library
+with tabs[2]:
+    st.subheader("📖 Shared Household Food Library")
     
-    st.markdown("### 📝 Record Today's Weight")
-    w_unit = st.radio("Input Unit", ["kg", "stone & lbs"], horizontal=True, key="w_log_unit")
+    # --- SUB-TAB: SEARCH OPEN FOOD FACTS UK ---
+    lib_tab1, lib_tab2 = st.tabs(["🔍 Search UK Supermarket Database", "➕ Add Custom Item Manually"])
     
-    with st.form("log_weight"):
-        w_date = st.date_input("Date", date.today())
+    with lib_tab1:
+        st.markdown("##### Search over 300,000+ UK products (Tesco, Sainsbury's, Asda, etc.)")
+        search_query = st.text_input("Product or Brand Name (e.g. Warburtons Toastie, Heinz Baked Beans)", key="off_search")
         
-        if w_unit == "kg":
-            w_val = st.number_input("Recorded Weight (kg)", min_value=30.0, max_value=250.0, value=85.0, step=0.1)
-            final_kg = w_val
-        else:
-            col_st, col_lbs = st.columns(2)
-            st_val = col_st.number_input("Stone", min_value=4, max_value=40, value=13)
-            lbs_val = col_lbs.number_input("Pounds", min_value=0.0, max_value=13.9, value=5.0, step=0.5)
-            final_kg = st_lbs_to_kg(st_val, lbs_val)
+        if search_query:
+            with st.spinner("Searching UK database..."):
+                url = f"https://uk.openfoodfacts.org/cgi/search.pl?search_terms={search_query}&search_simple=1&action=process&json=1&page_size=10"
+                try:
+                    res = requests.get(url, headers={"User-Agent": "TrioTracker - Streamlit - Version 1.0"}).json()
+                    products = res.get("products", [])
+                    
+                    if products:
+                        for prod in products:
+                            p_name = prod.get("product_name", "Unknown Item")
+                            p_brand = prod.get("brands", "")
+                            nutriments = prod.get("nutriments", {})
+                            cals_100g = nutriments.get("energy-kcal_100g", 0)
+                            
+                            if cals_100g and p_name != "Unknown Item":
+                                display_title = f"{p_brand} - {p_name}" if p_brand else p_name
+                                c1, c2, c3 = st.columns([3, 2, 1])
+                                c1.write(f"**{display_title}**")
+                                c2.write(f"{int(cals_100g)} kcal / 100g")
+                                
+                                if c3.button("Import to Library", key=f"import_{prod.get('_id', p_name)}"):
+                                    st_supabase.client.from_("food_library").upsert({
+                                        "food_name": display_title[:100],
+                                        "calories_per_100g": float(cals_100g),
+                                        "default_portion_name": "serving",
+                                        "portion_grams": 100.0
+                                    }, on_conflict="food_name").execute()
+                                    st.success(f"Added '{display_title}' to Master Library!")
+                                    st.rerun()
+                    else:
+                        st.info("No matching products found. Try a broader search term.")
+                except Exception as e:
+                    st.error(f"Search service error: {e}")
+
+    with lib_tab2:
+        with st.form("add_food"):
+            fname = st.text_input("Food Item Name")
+            fcal = st.number_input("Calories per 100g", min_value=0.0)
+            pname = st.text_input("Portion Description (e.g. 1 slice, 1 bar)", value="serving")
+            pgrams = st.number_input("Portion Weight in Grams", min_value=1.0, value=100.0)
             
-        if st.form_submit_button("Log Weight Entry"):
-            st_supabase.client.from_("weight_logs").insert({
-                "log_date": w_date.strftime("%Y-%m-%d"),
-                "user_name": current_user,
-                "weight_kg": final_kg
-            }).execute()
-            st.success(f"Weight logged successfully ({round(final_kg, 1)} kg)!")
-            st.rerun()
+            if st.form_submit_button("Save Custom Item") and fname:
+                st_supabase.client.from_("food_library").upsert({
+                    "food_name": fname, 
+                    "calories_per_100g": fcal,
+                    "default_portion_name": pname, 
+                    "portion_grams": pgrams
+                }, on_conflict="food_name").execute()
+                st.success(f"Saved '{fname}'!")
+                st.rerun()
 
     st.markdown("---")
-    
-    try:
-        w_res = st_supabase.client.from_("weight_logs").select("*").eq("user_name", current_user).execute()
-        prof_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
-    except Exception as e:
-        st.error(f"Database error: {e}. Please ensure the 'weight_logs' table exists in Supabase.")
-        st.stop()
-    
-    if w_res.data:
-        w_df = pd.DataFrame(w_res.data).sort_values("log_date")
-        latest_kg = w_df.iloc[-1]["weight_kg"]
-        l_st, l_lbs = kg_to_st_lbs(latest_kg)
-        
-        target_kg = None
-        bmi_val = None
-        bmi_status = ""
-        
-        if prof_res.data:
-            p_data = prof_res.data[0]
-            target_kg = float(p_data.get("target_weight_kg", 0.0)) if p_data.get("target_weight_kg") else None
-            
-            if "height_cm" in p_data and float(p_data["height_cm"]) > 0:
-                height_m = float(p_data["height_cm"]) / 100.0
-                bmi_val = round(latest_kg / (height_m ** 2), 1)
-                if bmi_val < 18.5:
-                    bmi_status = "Underweight"
-                elif 18.5 <= bmi_val < 25.0:
-                    bmi_status = "Normal weight"
-                elif 25.0 <= bmi_val < 30.0:
-                    bmi_status = "Overweight"
-                else:
-                    bmi_status = "Obese"
-
-        col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Latest Weight", f"{round(latest_kg, 1)} kg")
-        col_m2.metric("Latest Weight (st/lbs)", f"{l_st}st {l_lbs}lbs")
-        if bmi_val:
-            col_m3.metric("Current BMI", f"{bmi_val}", delta=bmi_status, delta_color="normal")
-        else:
-            col_m3.metric("Current BMI", "N/A", help="Set height in Profile Settings to calculate BMI")
-
-        st.markdown("---")
-
-        col_g1, col_g2 = st.columns([2, 1])
-        col_g1.markdown("### Weight Trend vs Target")
-        graph_unit = col_g2.selectbox("Graph Y-Axis Unit", ["Kilograms (kg)", "Total Stones (st)", "Total Pounds (lbs)"])
-        
-        if graph_unit == "Kilograms (kg)":
-            w_df["Actual Weight"] = w_df["weight_kg"]
-            if target_kg:
-                w_df["Target Goal"] = target_kg
-        elif graph_unit == "Total Stones (st)":
-            w_df["Actual Weight"] = w_df["weight_kg"] * 0.157473
-            if target_kg:
-                w_df["Target Goal"] = target_kg * 0.157473
-        else:
-            w_df["Actual Weight"] = w_df["weight_kg"] * 2.20462
-            if target_kg:
-                w_df["Target Goal"] = target_kg * 2.20462
-            
-        chart_cols = ["Actual Weight", "Target Goal"] if target_kg else ["Actual Weight"]
-        st.line_chart(w_df.set_index("log_date")[chart_cols])
-    else:
-        st.info("No weight entries recorded yet. Log your current weight above to generate your trend graph.")
-
+    st.subheader("📚 Saved Household Food Library")
+    master_res = st_supabase.client.from_("food_library").select("*").execute()
+    if master_res.data:
+        df_master = pd.DataFrame(master_res.data)
+        st.dataframe(df_master, use_container_width=True)
 # --- TAB 3: SHARED FOOD LIBRARY ---
 with tabs[2]:
     st.subheader("📖 Shared Household Food Library")
@@ -319,6 +296,7 @@ with tabs[2]:
             st.dataframe(df_master, use_container_width=True)
     else:
         st.info("No items in the food library yet. Add your first item above!")
+        
 # --- TAB 4: RECIPE BUILDER ---
 with tabs[3]:
     st.subheader("🍳 Recipe Builder")
