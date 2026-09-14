@@ -75,20 +75,27 @@ with tabs[0]:
     date_str = selected_date.strftime("%Y-%m-%d")
     
     daily_target = 2000.0
-    profile_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
-    if profile_res.data:
-        p = profile_res.data[0]
-        daily_target = calculate_daily_target(
-            p['gender'], p['age'], p['height_cm'], p['start_weight_kg'], 
-            p['target_weight_kg'], p['start_date'], p['target_date'], p['activity_multiplier']
-        )
+    try:
+        profile_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
+        if profile_res.data:
+            p = profile_res.data[0]
+            daily_target = calculate_daily_target(
+                p['gender'], p['age'], p['height_cm'], p['start_weight_kg'], 
+                p['target_weight_kg'], p['start_date'], p['target_date'], p['activity_multiplier']
+            )
+    except Exception:
+        pass
 
-    logs_res = st_supabase.client.from_("daily_logs").select("*").eq("log_date", date_str).eq("user_name", current_user).execute()
-    consumed_cals = 0.0
+    # Fetch daily logs safely
     logs_df = pd.DataFrame()
-    if logs_res.data:
-        logs_df = pd.DataFrame(logs_res.data)
-        consumed_cals = logs_df['calories'].sum()
+    consumed_cals = 0.0
+    try:
+        logs_res = st_supabase.client.from_("daily_logs").select("*").eq("log_date", date_str).eq("user_name", current_user).execute()
+        if logs_res.data:
+            logs_df = pd.DataFrame(logs_res.data)
+            consumed_cals = logs_df['calories'].sum()
+    except Exception as e:
+        st.error(f"Error fetching daily logs: {e}")
 
     st.markdown(f"""
         <div class="highlight-card">
@@ -104,60 +111,88 @@ with tabs[0]:
 
     st.markdown("---")
     
+    # RUNNING TOTALS BY MEAL CATEGORY
+    st.subheader("📊 Category Running Totals")
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    
+    categories = ["Breakfast", "Lunch", "Dinner", "Snacks"]
+    cat_totals = {}
+    for cat in categories:
+        if not logs_df.empty and 'meal_type' in logs_df.columns:
+            cat_totals[cat] = logs_df[logs_df['meal_type'] == cat]['calories'].sum()
+        else:
+            cat_totals[cat] = 0.0
+
+    m_col1.metric("🍳 Breakfast", f"{int(cat_totals['Breakfast'])} kcal")
+    m_col2.metric("🥗 Lunch", f"{int(cat_totals['Lunch'])} kcal")
+    m_col3.metric("🍽️ Dinner", f"{int(cat_totals['Dinner'])} kcal")
+    m_col4.metric("🥨 Snacks", f"{int(cat_totals['Snacks'])} kcal")
+
+    st.markdown("---")
+
     # Quick Unassigned Calories
-    with st.expander("⚡ Add Quick / Unassigned Calories (e.g. Snack, Chocolate)"):
+    with st.expander("⚡ Add Quick / Unassigned Calories"):
         c_desc, c_kcal, c_meal = st.columns([2, 1, 1])
         q_desc = c_desc.text_input("Description", value="Quick Calorie Item")
         q_cal = c_kcal.number_input("Calories (kcal)", min_value=1, value=200)
-        q_type = c_meal.selectbox("Meal Category", ["Snacks", "Breakfast", "Lunch", "Dinner"], key="q_meal")
+        q_type = c_meal.selectbox("Meal Category", categories, key="q_meal")
         if st.button("Add Quick Entry"):
-            st_supabase.client.from_("daily_logs").insert({
-                "log_date": date_str, "user_name": current_user, 
-                "food_name": q_desc, "portion_g": 0, "calories": q_cal, "meal_type": q_type
-            }).execute()
-            st.success(f"Added {q_cal} kcal to {q_type}")
-            st.rerun()
+            try:
+                st_supabase.client.from_("daily_logs").insert({
+                    "log_date": date_str, "user_name": current_user, 
+                    "food_name": q_desc, "portion_g": 0, "calories": float(q_cal), "meal_type": q_type
+                }).execute()
+                st.success(f"Added {q_cal} kcal to {q_type}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to log entry: {e}")
 
     # Standard Item Logging
     st.subheader("➕ Log Food Entry")
-    foods_res = st_supabase.client.from_("food_library").select("*").execute()
-    if foods_res.data:
-        foods_df = pd.DataFrame(foods_res.data)
-        
-        col_f, col_m = st.columns([2, 1])
-        selected_food = col_f.selectbox("Food Item", foods_df['food_name'].tolist())
-        meal_cat = col_m.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snacks"])
-        
-        food_row = foods_df[foods_df['food_name'] == selected_food].iloc[0]
-        log_mode = st.radio("Log By", ["Portion/Serving", "Exact Weight (grams)"], horizontal=True)
-        
-        if log_mode == "Portion/Serving":
-            p_name = food_row.get('default_portion_name', 'serving')
-            p_qty = st.number_input(f"Number of Portions ({p_name})", min_value=0.25, value=1.0, step=0.25)
-            logged_cal = (food_row['calories_per_100g'] / 100.0) * (food_row.get('portion_grams', 100.0) * p_qty)
-            portion_desc = f"{p_qty} {p_name}"
-        else:
-            grams = st.number_input("Weight (g)", min_value=1.0, value=100.0)
-            logged_cal = (food_row['calories_per_100g'] / 100.0) * grams
-            portion_desc = f"{grams}g"
+    try:
+        foods_res = st_supabase.client.from_("food_library").select("*").execute()
+        if foods_res.data:
+            foods_df = pd.DataFrame(foods_res.data)
+            
+            col_f, col_m = st.columns([2, 1])
+            selected_food = col_f.selectbox("Food Item", foods_df['food_name'].tolist())
+            meal_cat = col_m.selectbox("Category", categories)
+            
+            food_row = foods_df[foods_df['food_name'] == selected_food].iloc[0]
+            log_mode = st.radio("Log By", ["Portion/Serving", "Exact Weight (grams)"], horizontal=True)
+            
+            if log_mode == "Portion/Serving":
+                p_name = food_row.get('default_portion_name', 'serving')
+                p_qty = st.number_input(f"Number of Portions ({p_name})", min_value=0.25, value=1.0, step=0.25)
+                logged_cal = (float(food_row['calories_per_100g']) / 100.0) * (float(food_row.get('portion_grams', 100.0)) * p_qty)
+                portion_desc = f"{p_qty} {p_name}"
+            else:
+                grams = st.number_input("Weight (g)", min_value=1.0, value=100.0)
+                logged_cal = (float(food_row['calories_per_100g']) / 100.0) * grams
+                portion_desc = f"{grams}g"
 
-        if st.button("Add to Daily Log"):
-            st_supabase.client.from_("daily_logs").insert({
-                "log_date": date_str, "user_name": current_user, 
-                "food_name": f"{selected_food} ({portion_desc})", "portion_g": 0, "calories": logged_cal, "meal_type": meal_cat
-            }).execute()
-            st.success(f"Added {selected_food} ({int(logged_cal)} kcal)")
-            st.rerun()
+            if st.button("Add to Daily Log"):
+                st_supabase.client.from_("daily_logs").insert({
+                    "log_date": date_str, 
+                    "user_name": current_user, 
+                    "food_name": f"{selected_food} ({portion_desc})", 
+                    "portion_g": 0.0, 
+                    "calories": float(logged_cal), 
+                    "meal_type": meal_cat
+                }).execute()
+                st.success(f"Added {selected_food} ({int(logged_cal)} kcal)")
+                st.rerun()
+    except Exception as e:
+        st.error(f"Logging error: {e}")
 
     if not logs_df.empty:
         st.markdown("---")
-        st.subheader("Today's Summary")
-        for category in ["Breakfast", "Lunch", "Dinner", "Snacks"]:
-            cat_df = logs_df[logs_df['meal_type'] == category]
+        st.subheader("Today's Breakdown")
+        for category in categories:
+            cat_df = logs_df[logs_df['meal_type'] == category] if 'meal_type' in logs_df.columns else pd.DataFrame()
             if not cat_df.empty:
                 st.markdown(f"**{category}** — *{int(cat_df['calories'].sum())} kcal*")
                 st.dataframe(cat_df[['food_name', 'calories']], use_container_width=True)
-
 # --- TAB 2: PROGRESS & GRAPHS ---
 with tabs[1]:
     st.subheader(f"📈 Progress Tracking: {current_user}")
