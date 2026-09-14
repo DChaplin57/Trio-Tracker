@@ -65,7 +65,6 @@ selected_option = st.sidebar.selectbox("👤 Select Active Profile", profile_opt
 if selected_option == "+ Create New Profile":
     current_user = st.sidebar.text_input("Enter New Profile Name", value="New User")
 else:
-    current_user = selected_optionelse:
     current_user = selected_option
 
 tabs = st.tabs(["📊 Daily Log", "📈 Progress & Graphs", "📖 Shared Food Library", "🍳 Recipe Builder", "⚙️ Profile Settings"])
