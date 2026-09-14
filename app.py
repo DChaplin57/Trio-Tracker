@@ -259,16 +259,27 @@ with tabs[2]:
         
         if st.form_submit_button("Save to Master Library") and fname:
             st_supabase.client.from_("food_library").upsert({
-                "food_name": fname, "calories_per_100g": fcal,
-                "default_portion_name": pname, "portion_grams": pgrams
+                "food_name": fname, 
+                "calories_per_100g": fcal,
+                "default_portion_name": pname, 
+                "portion_grams": pgrams
             }, on_conflict="food_name").execute()
             st.success(f"Saved '{fname}'!")
             st.rerun()
 
     master_res = st_supabase.client.from_("food_library").select("*").execute()
     if master_res.data:
-        st.dataframe(pd.DataFrame(master_res.data)[['food_name', 'calories_per_100g', 'default_portion_name', 'portion_grams']], use_container_width=True)
-
+        df_master = pd.DataFrame(master_res.data)
+        # Safely select preferred columns if they exist, otherwise show all available columns
+        target_cols = ['food_name', 'calories_per_100g', 'default_portion_name', 'portion_grams']
+        display_cols = [c for c in target_cols if c in df_master.columns]
+        
+        if display_cols:
+            st.dataframe(df_master[display_cols], use_container_width=True)
+        else:
+            st.dataframe(df_master, use_container_width=True)
+    else:
+        st.info("No items in the food library yet. Add your first item above!")
 # --- TAB 4: RECIPE BUILDER ---
 with tabs[3]:
     st.subheader("🍳 Recipe Builder")
