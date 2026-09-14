@@ -52,7 +52,7 @@ def calculate_daily_target(gender, age, height_cm, start_weight_kg, target_weigh
 st.title("🥗 Trio Weight Tracker")
 
 # Dynamic Profile Selection
-existing_profiles = st_supabase.query("profiles", ttl=0).execute()
+existing_profiles = st_supabase.client.from_("profiles").select("user_name").execute()
 profile_names = [p['user_name'] for p in existing_profiles.data] if existing_profiles.data else ["User 1"]
 profile_options = profile_names + ["+ Create New Profile"]
 
@@ -71,7 +71,7 @@ with tabs[0]:
     date_str = selected_date.strftime("%Y-%m-%d")
     
     daily_target = 2000.0
-    profile_res = st_supabase.query("profiles", ttl=0).eq("user_name", current_user).execute()
+    profile_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
     if profile_res.data:
         p = profile_res.data[0]
         daily_target = calculate_daily_target(
@@ -79,7 +79,7 @@ with tabs[0]:
             p['target_weight_kg'], p['start_date'], p['target_date'], p['activity_multiplier']
         )
 
-    logs_res = st_supabase.query("daily_logs", ttl=0).eq("log_date", date_str).eq("user_name", current_user).execute()
+    logs_res = st_supabase.client.from_("daily_logs").select("*").eq("log_date", date_str).eq("user_name", current_user).execute()
     consumed_cals = 0.0
     logs_df = pd.DataFrame()
     if logs_res.data:
@@ -107,7 +107,7 @@ with tabs[0]:
         q_cal = c_kcal.number_input("Calories (kcal)", min_value=1, value=200)
         q_type = c_meal.selectbox("Meal Category", ["Snacks", "Breakfast", "Lunch", "Dinner"], key="q_meal")
         if st.button("Add Quick Entry"):
-            st_supabase.table("daily_logs").insert({
+            st_supabase.client.from_("daily_logs").insert({
                 "log_date": date_str, "user_name": current_user, 
                 "food_name": q_desc, "portion_g": 0, "calories": q_cal, "meal_type": q_type
             }).execute()
@@ -116,7 +116,7 @@ with tabs[0]:
 
     # Standard Item Logging
     st.subheader("➕ Log Food Entry")
-    foods_res = st_supabase.query("food_library", ttl=60).execute()
+    foods_res = st_supabase.client.from_("food_library").select("*").execute()
     if foods_res.data:
         foods_df = pd.DataFrame(foods_res.data)
         
@@ -138,7 +138,7 @@ with tabs[0]:
             portion_desc = f"{grams}g"
 
         if st.button("Add to Daily Log"):
-            st_supabase.table("daily_logs").insert({
+            st_supabase.client.from_("daily_logs").insert({
                 "log_date": date_str, "user_name": current_user, 
                 "food_name": f"{selected_food} ({portion_desc})", "portion_g": 0, "calories": logged_cal, "meal_type": meal_cat
             }).execute()
@@ -174,7 +174,7 @@ with tabs[1]:
             final_kg = st_lbs_to_kg(st_val, lbs_val)
             
         if st.form_submit_button("Log Weight Entry"):
-            st_supabase.table("weight_logs").insert({
+            st_supabase.client.from_("weight_logs").insert({
                 "log_date": w_date.strftime("%Y-%m-%d"),
                 "user_name": current_user,
                 "weight_kg": final_kg
@@ -184,8 +184,8 @@ with tabs[1]:
 
     st.markdown("---")
     
-    w_res = st_supabase.query("weight_logs", ttl=0).eq("user_name", current_user).execute()
-    prof_res = st_supabase.query("profiles", ttl=0).eq("user_name", current_user).execute()
+    w_res = st_supabase.client.from_("weight_logs").select("*").eq("user_name", current_user).execute()
+    prof_res = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute()
     
     if w_res.data:
         w_df = pd.DataFrame(w_res.data).sort_values("log_date")
@@ -254,14 +254,14 @@ with tabs[2]:
         pgrams = st.number_input("Portion Weight in Grams", min_value=1.0, value=100.0)
         
         if st.form_submit_button("Save to Master Library") and fname:
-            st_supabase.table("food_library").upsert({
+            st_supabase.client.from_("food_library").upsert({
                 "food_name": fname, "calories_per_100g": fcal,
                 "default_portion_name": pname, "portion_grams": pgrams
             }, on_conflict="food_name").execute()
             st.success(f"Saved '{fname}'!")
             st.rerun()
 
-    master_res = st_supabase.query("food_library", ttl=0).execute()
+    master_res = st_supabase.client.from_("food_library").select("*").execute()
     if master_res.data:
         st.dataframe(pd.DataFrame(master_res.data)[['food_name', 'calories_per_100g', 'default_portion_name', 'portion_grams']], use_container_width=True)
 
@@ -271,7 +271,7 @@ with tabs[3]:
     recipe_name = st.text_input("Recipe Name")
     servings = st.number_input("Servings", min_value=1.0, value=4.0)
     
-    foods_res = st_supabase.query("food_library", ttl=60).execute()
+    foods_res = st_supabase.client.from_("food_library").select("*").execute()
     if foods_res.data:
         available_foods = pd.DataFrame(foods_res.data)
         if 'recipe_items' not in st.session_state:
@@ -292,7 +292,7 @@ with tabs[3]:
             st.warning(f"**Total Energy:** {int(tot_cals)} kcal | **Energy per Serving:** {int(per_portion)} kcal")
             
             if st.button("Save Recipe to Food Library") and recipe_name:
-                st_supabase.table("food_library").upsert({
+                st_supabase.client.from_("food_library").upsert({
                     "food_name": recipe_name, 
                     "calories_per_100g": per_portion,
                     "default_portion_name": "1 portion", 
@@ -306,7 +306,7 @@ with tabs[3]:
 with tabs[4]:
     st.subheader(f"⚙️ Profile Settings: {current_user}")
     
-    prof_data = st_supabase.query("profiles", ttl=0).eq("user_name", current_user).execute().data
+    prof_data = st_supabase.client.from_("profiles").select("*").eq("user_name", current_user).execute().data
     p_curr = prof_data[0] if prof_data else {}
 
     with st.form("profile_form"):
@@ -353,7 +353,7 @@ with tabs[4]:
         u_act = st.selectbox("Activity Level", list(act_opts.keys()))
         
         if st.form_submit_button("Save Parameters"):
-            st_supabase.table("profiles").upsert({
+            st_supabase.client.from_("profiles").upsert({
                 "user_name": new_name, 
                 "gender": u_gender, 
                 "age": u_age,
@@ -372,7 +372,7 @@ with tabs[4]:
     st.subheader("📥 Data Backup & Export")
     col_exp1, col_exp2 = st.columns(2)
 
-    export_logs = st_supabase.query("daily_logs", ttl=0).eq("user_name", current_user).execute()
+    export_logs = st_supabase.client.from_("daily_logs").select("*").eq("user_name", current_user).execute()
     if export_logs.data:
         df_logs_export = pd.DataFrame(export_logs.data)
         csv_logs = df_logs_export.to_csv(index=False).encode('utf-8')
@@ -385,7 +385,7 @@ with tabs[4]:
     else:
         col_exp1.info("No meal logs to export.")
 
-    export_weight = st_supabase.query("weight_logs", ttl=0).eq("user_name", current_user).execute()
+    export_weight = st_supabase.client.from_("weight_logs").select("*").eq("user_name", current_user).execute()
     if export_weight.data:
         df_weight_export = pd.DataFrame(export_weight.data)
         csv_weight = df_weight_export.to_csv(index=False).encode('utf-8')
