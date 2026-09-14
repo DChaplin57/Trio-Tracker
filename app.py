@@ -296,7 +296,7 @@ with tabs[2]:
     
     lib_tab1, lib_tab2 = st.tabs(["🔍 Search UK Supermarket Database", "➕ Add Custom Item Manually"])
     
-with lib_tab1:
+    with lib_tab1:
         st.markdown("##### Search over 300,000+ UK products (Tesco, Sainsbury's, Asda, etc.)")
         search_query = st.text_input("Product or Brand Name (e.g. Warburtons Toastie, Heinz Beans)", key="off_search_input")
         
