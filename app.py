@@ -296,41 +296,58 @@ with tabs[2]:
     
     lib_tab1, lib_tab2 = st.tabs(["🔍 Search UK Supermarket Database", "➕ Add Custom Item Manually"])
     
-    with lib_tab1:
+with lib_tab1:
         st.markdown("##### Search over 300,000+ UK products (Tesco, Sainsbury's, Asda, etc.)")
         search_query = st.text_input("Product or Brand Name (e.g. Warburtons Toastie, Heinz Beans)", key="off_search_input")
         
         if search_query:
             with st.spinner("Searching UK database..."):
-                url = f"https://uk.openfoodfacts.org/cgi/search.pl?search_terms={search_query}&search_simple=1&action=process&json=1&page_size=10"
+                import urllib.parse
+                encoded_query = urllib.parse.quote(search_query.strip())
+                url = f"https://uk.openfoodfacts.org/cgi/search.pl?search_terms={encoded_query}&search_simple=1&action=process&json=1&page_size=10"
+                
+                headers = {
+                    "User-Agent": "TrioTracker - Android/iOS App - Version 1.2 (Contact: admin@triotracker.local)"
+                }
+                
                 try:
-                    res = requests.get(url, headers={"User-Agent": "TrioTracker - Streamlit - Version 1.0"}).json()
-                    products = res.get("products", [])
+                    response = requests.get(url, headers=headers, timeout=5)
                     
-                    if products:
-                        for prod in products:
-                            p_name = prod.get("product_name", "Unknown Item")
-                            p_brand = prod.get("brands", "")
-                            nutriments = prod.get("nutriments", {})
-                            cals_100g = nutriments.get("energy-kcal_100g", 0)
+                    if response.status_code == 200:
+                        try:
+                            res = response.json()
+                            products = res.get("products", [])
                             
-                            if cals_100g and p_name != "Unknown Item":
-                                display_title = f"{p_brand} - {p_name}" if p_brand else p_name
-                                c1, c2, c3 = st.columns([3, 2, 1])
-                                c1.write(f"**{display_title}**")
-                                c2.write(f"{int(cals_100g)} kcal / 100g")
-                                
-                                if c3.button("Import", key=f"import_off_{prod.get('_id', p_name)}"):
-                                    st_supabase.client.from_("food_library").upsert({
-                                        "food_name": display_title[:100],
-                                        "calories_per_100g": float(cals_100g),
-                                        "default_portion_name": "serving",
-                                        "portion_grams": 100.0
-                                    }, on_conflict="food_name").execute()
-                                    st.success(f"Added '{display_title}' to Master Library!")
-                                    st.rerun()
+                            if products:
+                                for prod in products:
+                                    p_name = prod.get("product_name", "Unknown Item")
+                                    p_brand = prod.get("brands", "")
+                                    nutriments = prod.get("nutriments", {})
+                                    cals_100g = nutriments.get("energy-kcal_100g", 0)
+                                    
+                                    if cals_100g and p_name != "Unknown Item":
+                                        display_title = f"{p_brand} - {p_name}" if p_brand else p_name
+                                        c1, c2, c3 = st.columns([3, 2, 1])
+                                        c1.write(f"**{display_title}**")
+                                        c2.write(f"{int(cals_100g)} kcal / 100g")
+                                        
+                                        if c3.button("Import", key=f"import_off_{prod.get('_id', p_name)}"):
+                                            st_supabase.client.from_("food_library").upsert({
+                                                "food_name": display_title[:100],
+                                                "calories_per_100g": float(cals_100g),
+                                                "default_portion_name": "serving",
+                                                "portion_grams": 100.0
+                                            }, on_conflict="food_name").execute()
+                                            st.success(f"Added '{display_title}' to Master Library!")
+                                            st.rerun()
+                            else:
+                                st.info("No matching products found on Open Food Facts. Try broader search terms like 'Olive Spread'.")
+                        except ValueError:
+                            st.warning("Received an invalid response format from Open Food Facts. Please try again in a moment or add the item manually.")
                     else:
-                        st.info("No matching products found. Try a broader search term.")
+                        st.warning(f"Open Food Facts search server returned HTTP {response.status_code}. Try searching simply 'Olive Spread' or add manually under the next tab.")
+                except requests.exceptions.Timeout:
+                    st.error("Search request timed out. Please check your internet connection.")
                 except Exception as e:
                     st.error(f"Search service error: {e}")
 
