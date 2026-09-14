@@ -51,16 +51,21 @@ def calculate_daily_target(gender, age, height_cm, start_weight_kg, target_weigh
 # --- APP INTERFACE ---
 st.title("🥗 Trio Weight Tracker")
 
-# Dynamic Profile Selection
-existing_profiles = st_supabase.client.from_("profiles").select("user_name").execute()
-profile_names = [p['user_name'] for p in existing_profiles.data] if existing_profiles.data else ["User 1"]
-profile_options = profile_names + ["+ Create New Profile"]
+# Dynamic Profile Selection (Safe Execution)
+try:
+    existing_profiles = st_supabase.client.from_("profiles").select("user_name").execute()
+    profile_names = [p['user_name'] for p in existing_profiles.data] if existing_profiles.data else ["User 1"]
+except Exception as e:
+    st.warning("Could not load profiles from database. Using default profile.")
+    profile_names = ["User 1"]
 
+profile_options = profile_names + ["+ Create New Profile"]
 selected_option = st.sidebar.selectbox("👤 Select Active Profile", profile_options)
 
 if selected_option == "+ Create New Profile":
     current_user = st.sidebar.text_input("Enter New Profile Name", value="New User")
 else:
+    current_user = selected_optionelse:
     current_user = selected_option
 
 tabs = st.tabs(["📊 Daily Log", "📈 Progress & Graphs", "📖 Shared Food Library", "🍳 Recipe Builder", "⚙️ Profile Settings"])
